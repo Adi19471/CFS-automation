@@ -3,7 +3,7 @@
 End-to-end UI tests for the CFS (Container Freight Station) web app, frontend only.
 Built with Playwright and TypeScript, using page objects and fixtures, and producing Allure and a custom CFS HTML report.
 
-- 557 tests at three levels (smoke, sanity, regression): sign-in and session, dashboards, navigation, settings, every one of the 135 menu screens, the tools of every list, the full-page form of every Operations, MNR, Invoice, Commercial and Empty Depot screen, the New and Edit dialogs of every Admin and Documents master, and the EDI messages.
+- 559 tests at three levels (smoke, sanity, regression): sign-in and session, dashboards, navigation, settings, every one of the 135 menu screens, the tools of every list, the full-page form of every Operations, MNR, Invoice, Commercial and Empty Depot screen, the New and Edit dialogs of every Admin and Documents master, and the EDI messages.
 - One set of env files per environment: `local`, `dev`, `uat` and `production`. Production is always read-only.
 - Three reports from every run: the CFS report, Allure and the Playwright HTML report.
 
@@ -16,7 +16,15 @@ npx playwright install chromium
 
 Allure needs Java 8 or later (`java -version`).
 
-Fill in the sign-in in the env file of the environment you test. These files are gitignored; `.env.example` is the template.
+Sign in one of two ways. The first keeps no password in a file.
+
+**By hand.** This opens a browser window; you sign in there and only the session is saved. It lasts until the app ends it, up to 24 hours, and the test commands then work with no sign-in details set.
+
+```bash
+npm run auth:dev
+```
+
+**In the env file** of the environment you test. These files are gitignored; `.env.example` is the template.
 
 ```
 # .env.local
@@ -40,8 +48,8 @@ Tests stay in their module's folder and the level is a tag, so one test never ha
 
 | Level | Tag | Tests | What it answers |
 | --- | --- | --- | --- |
-| Smoke | `@smoke` | 19 | Is the app up? Sign-in, dashboard, one screen per module |
-| Sanity | `@sanity` | 123 | Does the core of each module work? List tools, forms and dialogs of the screens in `SANITY_SCREENS` (`src/config/modules.ts`), the EDI messages, the invoice stages |
+| Smoke | `@smoke` | 20 | Is the app up? Sign-in, dashboard, one screen per module |
+| Sanity | `@sanity` | 124 | Does the core of each module work? List tools, forms and dialogs of the screens in `SANITY_SCREENS` (`src/config/modules.ts`), the EDI messages, the invoice stages |
 | Regression | `@regression` | 415 | Everything else: the same checks on every other screen |
 
 `test:regression` runs all three levels together, which is the complete read-only suite.
@@ -76,10 +84,13 @@ Tags: `@smoke`, `@sanity`, `@regression`, `@screens`, `@public` and `@write`. Co
 | Allure | `allure-results/` → `allure-report/` | `npm run allure:report` (or `allure:serve`) |
 | Playwright HTML | `playwright-report/` | `npm run report:playwright` |
 
-The CFS report is one self-contained page (`cfs-report/index.html`) with these parts:
+The CFS report is one self-contained page (`cfs-report/index.html`) in the look of the CFS company theme, with these parts:
 
-- The verdict and pass rate.
+- The verdict and pass rate. If the sign-in fails, the report says so at the top, with how many tests did not run and why.
 - **Needs attention**: every failed or flaky test, with its error, screenshot and trace.
+- **CFS application coverage**: every menu screen of the app by module, with its result. Open a module to see its screens; a screen links to its test. Screens the run never reached count as *Not run*, so a short run cannot look like a complete one.
+- **Test levels**: smoke, sanity and regression results.
+- **Why tests were skipped**: each reason with its count, such as the company type or the role.
 - A card per module.
 - The slowest tests and the run details.
 - The full test list, which you can filter by result, module or text. Each test shows its steps, errors, screenshots, video, trace and browser console errors.

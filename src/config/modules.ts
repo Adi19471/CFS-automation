@@ -27,6 +27,7 @@ export const MODULES: Record<string, string> = {
  * company has and skips the rest. moduleScreens() refuses a path the menu does not have.
  */
 export const SANITY_SCREENS: Record<string, readonly string[]> = {
+  dashboard: ['/dashboard/ytd'],
   commercial: ['/commercial/customer-registration', '/commercial/contract-registration', '/commercial/booking'],
   marine: ['/marine/vessel-registration', '/marine/voyage'],
   'empty-depot': ['/operations/depot-pre-advice', '/operations/depot-gate-operations'],

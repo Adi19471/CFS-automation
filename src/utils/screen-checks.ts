@@ -2,7 +2,7 @@ import { test, expect, type BrowserIssues } from '@fixtures';
 import type { Page } from '@playwright/test';
 import { SANITY_SCREENS } from '@config/modules';
 import type { Topbar } from '@components/Topbar';
-import { breadcrumbOf, screensIn, type Screen } from '@data/screens';
+import { breadcrumbOf, screenOpensTitle, screensIn, type Screen } from '@data/screens';
 import type { AdminMasterPage } from '@pages/admin/AdminMasterPage';
 import { skipUnlessGranted } from '@pages/BasePage';
 import type { FormScreenPage } from '@pages/common/FormScreenPage';
@@ -57,7 +57,7 @@ export function screenTags(s: Screen, smoke?: Screen): Tag[] {
 }
 
 export function screenTitle(s: Screen): string {
-  return `${s.label} (${s.path}) opens`;
+  return screenOpensTitle(s);
 }
 
 /**

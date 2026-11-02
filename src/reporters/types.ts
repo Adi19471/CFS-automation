@@ -77,6 +77,46 @@ export interface RunCounts extends Record<TestState, number> {
   notRun: number;
 }
 
+/** How one menu screen did, from the test that opens it. */
+export type ScreenResult = 'opened' | 'failed' | 'flaky' | 'skipped' | 'not-run' | 'pending';
+
+export interface ScreenRow {
+  path: string;
+  label: string;
+  result: ScreenResult;
+  /** why it was skipped */
+  reason?: string;
+  /** anchor of its test in the list, when it was part of this run */
+  anchor?: string;
+}
+
+/** A module's menu screens: the CFS application coverage table. */
+export interface ScreenModule {
+  folder: string;
+  name: string;
+  screens: ScreenRow[];
+  counts: Record<ScreenResult, number>;
+}
+
+/** One test level (smoke, sanity, regression). */
+export interface LevelSummary {
+  tag: string;
+  name: string;
+  meaning: string;
+  total: number;
+  passed: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  notRun: number;
+  pending: number;
+}
+
+export interface SkipReason {
+  reason: string;
+  count: number;
+}
+
 export interface RunInfo {
   environment: string;
   description: string;
@@ -92,6 +132,8 @@ export interface RunInfo {
   ci: boolean;
   envFile: string;
   user: string;
+  /** who started the run on this machine */
+  runBy: string;
 }
 
 export interface ReportData {
@@ -104,6 +146,12 @@ export interface ReportData {
   durationMs: number;
   counts: RunCounts;
   modules: ModuleSummary[];
+  /** every menu screen of the app by module, whether or not this run reached it */
+  screens: ScreenModule[];
+  levels: LevelSummary[];
+  skipReasons: SkipReason[];
+  /** the sign-in setup failed, so the signed-in tests never started */
+  signInProblem?: string;
   tests: TestInfoRow[];
   globalErrors: ErrorInfo[];
   run: RunInfo;

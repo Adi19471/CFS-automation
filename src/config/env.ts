@@ -89,6 +89,8 @@ export const env = {
   username,
   password,
   hasCredentials: Boolean(username && password),
+  /** true = the setup waits for a person to sign in in the browser window (npm run auth:dev); nothing reads or stores a password */
+  handSignIn: flag('HAND_SIGN_IN', false),
 
   /** true = @write tests are skipped */
   readOnly,
@@ -131,8 +133,8 @@ export const env = {
 export function requireCredentials(): { username: string; password: string } {
   if (!env.hasCredentials) {
     throw new Error(
-      `CFS_USERNAME / CFS_PASSWORD are not set for [${env.name}]. Add them to .env.${env.name} ` +
-        '(see .env.example), or set them in the environment (CI: repository secrets).',
+      `CFS_USERNAME / CFS_PASSWORD are not set for [${env.name}]. Sign in by hand with npm run auth:${env.name}, ` +
+        `add them to .env.${env.name} (see .env.example), or set them in the environment (CI: repository secrets).`,
     );
   }
   return { username: env.username, password: env.password };

@@ -4,6 +4,9 @@
   "private": true,
   "description": "End-to-end UI automation for the CFS (Container Freight Station) web application: Playwright + TypeScript, Page Object Model, fixtures, Allure and a custom CFS HTML report.",
   "scripts": {
+    "auth:local": "cross-env TEST_ENV=local HAND_SIGN_IN=true HEADLESS=false RETRIES=0 playwright test --project=setup --reporter=line",
+    "auth:dev": "cross-env TEST_ENV=dev HAND_SIGN_IN=true HEADLESS=false RETRIES=0 playwright test --project=setup --reporter=line",
+    "auth:uat": "cross-env TEST_ENV=uat HAND_SIGN_IN=true HEADLESS=false RETRIES=0 playwright test --project=setup --reporter=line",
     "test": "playwright test",
     "test:local": "cross-env TEST_ENV=local playwright test",
     "test:dev": "cross-env TEST_ENV=dev playwright test",

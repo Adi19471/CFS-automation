@@ -1,6 +1,10 @@
-import type { AttachmentInfo, ErrorInfo, ModuleSummary, ReportData, StepInfo, TestInfoRow, TestState } from './types';
+import type { AttachmentInfo, ErrorInfo, LevelSummary, ModuleSummary, ReportData, ScreenModule, ScreenResult, ScreenRow, SkipReason, StepInfo, TestInfoRow, TestState } from './types';
 import { REPORT_CSS } from './report-styles';
 import { REPORT_JS, THEME_BOOT_JS } from './report-script';
+
+/** The product's own words, as on the CFS login screen. */
+const APP_NAME = 'CFS';
+const APP_TAGLINE = 'Container Freight Station';
 
 /** Renders the whole report page. Everything is escaped here; the page has no external requests. */
 export function renderReport(d: ReportData): string {
@@ -21,6 +25,11 @@ ${header(d)}
 ${overview(d)}
 ${d.globalErrors.length ? globalErrors(d.globalErrors) : ''}
 ${failedish.length ? attention(failedish, d) : ''}
+${coverage(d.screens)}
+<div class="two-col">
+${levels(d.levels)}
+${skipped(d.skipReasons)}
+</div>
 ${modules(d.modules)}
 <div class="two-col">
 ${slowest(d.tests)}
@@ -28,7 +37,7 @@ ${runDetails(d)}
 </div>
 ${testList(d)}
 </main>
-<footer class="foot wrap">Generated ${esc(fmtDate(d.endedAt))} · Playwright ${esc(d.run.playwright)} · CFS end-to-end suite</footer>
+<footer class="foot wrap">Generated ${esc(fmtDate(d.endedAt))} · Playwright ${esc(d.run.playwright)} · ${APP_NAME} ${APP_TAGLINE} application</footer>
 <script>${REPORT_JS}</script>
 </body>
 </html>`;
@@ -95,6 +104,8 @@ function icon(name: string): string {
     image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
     theme: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+    container: '<path d="M2 8.5 12 4l10 4.5v7L12 20 2 15.5z"/><path d="M2 8.5l10 4.5 10-4.5M12 13v7M7 6.3v9.5M17 6.3v9.5"/>',
+    chevron: '<path d="m9 6 6 6-6 6"/>',
   };
   return `<svg class="ico ico-${name}" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? ''}</svg>`;
 }
@@ -112,8 +123,8 @@ function header(d: ReportData): string {
   return `<header class="top">
   <div class="wrap top-inner">
     <div class="brand">
-      <span class="logo" aria-hidden="true">CFS</span>
-      <div><div class="brand-title">${esc(d.title)}</div><div class="brand-sub">Container Freight Station · end-to-end UI tests</div></div>
+      <span class="logo" aria-hidden="true">${icon('container')}</span>
+      <div><div class="brand-title">${esc(d.title)}</div><div class="brand-sub">${APP_NAME} · ${APP_TAGLINE} · end-to-end UI tests</div></div>
     </div>
     <div class="top-actions">${live}<span class="env env-${esc(d.run.environment)}">${esc(d.run.environment)}</span>
       <button type="button" class="btn-icon" id="theme-toggle" title="Switch light / dark" aria-label="Switch light / dark">${icon('theme')}</button>
@@ -127,6 +138,7 @@ function verdict(d: ReportData): { tone: TestState; headline: string } {
   const failed = c.failed + c.interrupted;
   if (!d.final) return { tone: 'running', headline: `Running — ${c.passed + failed + c.flaky + c.skipped} of ${c.total} done` };
   if (c.total === 0) return { tone: 'skipped', headline: 'No tests ran' };
+  if (d.signInProblem) return { tone: 'failed', headline: `Sign-in failed — ${plural(c.notRun, 'test')} did not run` };
   if (failed) return { tone: 'failed', headline: `${plural(failed, 'test')} failed` };
   if (c.flaky) return { tone: 'flaky', headline: `Passed with ${plural(c.flaky, 'flaky test')}` };
   if (c.passed === 0) return { tone: 'skipped', headline: `All ${plural(c.total, 'test')} skipped` };
@@ -162,7 +174,8 @@ function donut(d: ReportData): string {
   <g transform="rotate(-90 64 64)">${arcs}</g>
   <text x="64" y="62" class="donut-value">${executed ? `${rate}%` : '–'}</text>
   <text x="64" y="80" class="donut-label">pass rate</text>
-</svg>`;
+</svg>
+<div class="donut-note">of the ${plural(executed, 'test')} that ran</div>`;
 }
 
 function overview(d: ReportData): string {
@@ -183,9 +196,11 @@ function overview(d: ReportData): string {
       ${kpi('Passed', c.passed, 'passed', 'passed')}
       ${kpi('Failed', c.failed + c.interrupted, 'failed', 'failed')}
       ${kpi('Flaky', c.flaky, 'flaky', 'flaky')}
-      ${kpi('Skipped', c.skipped, 'skipped', 'skipped')}
+      ${kpi('Skipped', c.skipped - c.notRun, 'skipped', 'skipped')}
+      ${c.notRun ? kpi('Not run', c.notRun, 'skipped', 'skipped') : ''}
     </div>
-    ${c.notRun ? `<p class="note">${plural(c.notRun, 'test')} did not run because a test they depend on (the sign-in setup) failed or the run stopped.</p>` : ''}
+    ${d.signInProblem ? `<p class="alert"><b>Why:</b> ${esc(d.signInProblem)}</p>` : ''}
+    ${c.notRun && !d.signInProblem ? `<p class="note">${plural(c.notRun, 'test')} did not run because a test they depend on failed or the run stopped.</p>` : ''}
   </div>
   <div class="hero-chart">${donut(d)}</div>
 </section>`;
@@ -246,6 +261,86 @@ function modules(list: ModuleSummary[]): string {
 </section>`;
 }
 
+const SCREEN_RESULT: Record<ScreenResult, { label: string; state: TestState }> = {
+  opened: { label: 'Opened', state: 'passed' },
+  failed: { label: 'Failed', state: 'failed' },
+  flaky: { label: 'Flaky', state: 'flaky' },
+  skipped: { label: 'Skipped', state: 'skipped' },
+  'not-run': { label: 'Not run', state: 'skipped' },
+  pending: { label: 'Running', state: 'running' },
+};
+
+function screenRow(s: ScreenRow): string {
+  const { label, state } = SCREEN_RESULT[s.result];
+  const name = s.anchor ? `<a href="#${s.anchor}" data-open="${s.anchor}">${esc(s.label)}</a>` : esc(s.label);
+  return `<div class="scr">
+  <span class="scr-name">${name}<small>${esc(s.path)}</small></span>
+  <span class="scr-reason">${esc(s.reason?.replace(/^[^:]*: /, '') ?? '')}</span>
+  <span class="pill pill-${state}">${icon(state)}${label}</span>
+</div>`;
+}
+
+function coverageRow(m: ScreenModule): string {
+  const c = m.counts;
+  const cell = (n: number, tone = '') => `<span class="cov-n ${n ? tone : 'cov-zero'}">${n}</span>`;
+  return `<details class="cov-mod">
+  <summary class="cov-row">
+    <span class="cov-name">${icon('chevron')}${esc(m.name)}</span>
+    ${cell(m.screens.length)}${cell(c.opened + c.flaky, 'c-passed')}${cell(c.failed, 'c-failed')}${cell(c.skipped, 'c-skipped')}${cell(c['not-run'] + c.pending)}
+  </summary>
+  <div class="cov-screens">${m.screens.map(screenRow).join('')}</div>
+</details>`;
+}
+
+/** Every menu screen of the app, so a run that reached only some of them cannot read as complete. */
+function coverage(list: ScreenModule[]): string {
+  const sum = (result: ScreenResult) => list.reduce((n, m) => n + m.counts[result], 0);
+  const total = list.reduce((n, m) => n + m.screens.length, 0);
+  const opened = sum('opened') + sum('flaky');
+  const tile = (label: string, value: number | string, tone = '') => `<div class="kpi kpi-${tone}"><span class="kpi-value">${value}</span><span class="kpi-label">${label}</span></div>`;
+  return `<section class="section" id="screens" aria-labelledby="cov-title">
+  <h2 class="section-title" id="cov-title">${APP_NAME} application coverage <span class="count">${plural(total, 'screen')}</span></h2>
+  <div class="card cov">
+    <div class="kpis cov-tiles">
+      ${tile('Menu screens', total)}
+      ${tile('Opened', opened, 'passed')}
+      ${tile('Failed', sum('failed'), 'failed')}
+      ${tile('Skipped', sum('skipped'), 'skipped')}
+      ${tile('Not run', sum('not-run') + sum('pending'), 'skipped')}
+    </div>
+    <div class="cov-table">
+      <div class="cov-row cov-head"><span class="cov-name">Module</span><span class="cov-n">Screens</span><span class="cov-n">Opened</span><span class="cov-n">Failed</span><span class="cov-n">Skipped</span><span class="cov-n">Not run</span></div>
+      ${list.map(coverageRow).join('')}
+    </div>
+  </div>
+</section>`;
+}
+
+function levels(list: LevelSummary[]): string {
+  const rows = list
+    .map(
+      (l) => `<div class="level">
+  <div class="level-head"><span class="level-name">${esc(l.name)}</span><span class="muted">${plural(l.total, 'test')}</span></div>
+  <div class="level-meaning">${esc(l.meaning)}</div>
+  ${stackedBar({ ...l, skipped: l.skipped + l.notRun })}
+  <div class="module-counts"><span class="c-passed">${l.passed} passed</span>${l.failed ? `<span class="c-failed">${l.failed} failed</span>` : ''}${l.flaky ? `<span class="c-flaky">${l.flaky} flaky</span>` : ''}${l.skipped ? `<span class="c-skipped">${l.skipped} skipped</span>` : ''}${l.notRun ? `<span class="c-skipped">${l.notRun} not run</span>` : ''}${l.pending ? `<span class="c-running">${l.pending} to go</span>` : ''}</div>
+</div>`,
+    )
+    .join('');
+  return `<section class="card section" aria-labelledby="lvl-title">
+  <h2 class="card-title" id="lvl-title">Test levels</h2>
+  <div class="levels">${rows}</div>
+</section>`;
+}
+
+function skipped(list: SkipReason[]): string {
+  const rows = list.map((s) => `<div class="skip-row"><span class="skip-count">${s.count}</span><span>${esc(s.reason)}</span></div>`).join('');
+  return `<section class="card section" aria-labelledby="skip-title">
+  <h2 class="card-title" id="skip-title">Why tests were skipped</h2>
+  ${rows ? `<div class="skips">${rows}</div>` : '<p class="empty">Nothing was skipped.</p>'}
+</section>`;
+}
+
 function slowest(tests: TestInfoRow[]): string {
   const top = tests
     .filter((t) => t.durationMs > 0)
@@ -266,9 +361,11 @@ function slowest(tests: TestInfoRow[]): string {
 function runDetails(d: ReportData): string {
   const r = d.run;
   const rows: [string, string][] = [
+    ['Application', `${APP_NAME} — ${APP_TAGLINE}`],
     ['Environment', `${r.environment} — ${r.description}`],
     ['Address', r.baseUrl],
     ['Signed in as', r.user],
+    ['Run by', r.runBy],
     ['Browsers', r.browsers],
     ['Projects', r.projects],
     ['Data changes', r.readOnly ? 'Read-only (@write tests skipped)' : 'Allowed (@write tests run)'],

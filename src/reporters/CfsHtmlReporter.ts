@@ -1,11 +1,15 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { exec } from 'child_process';
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestError, TestResult, TestStep } from '@playwright/test/reporter';
 import { env } from '../config/env';
 import { MODULES, folderOf, moduleName } from '../config/modules';
+import { AUTH_META_FILE } from '../config/paths';
+import { SCREENS, screenOpensTitle, type Screen } from '../data/screens';
+import { TAG } from '../utils/tags';
 import { renderReport } from './render';
-import type { AttachmentInfo, ErrorInfo, ModuleSummary, ReportData, RunCounts, StepInfo, TestInfoRow, TestState } from './types';
+import type { AttachmentInfo, ErrorInfo, LevelSummary, ModuleSummary, ReportData, RunCounts, ScreenModule, ScreenResult, ScreenRow, SkipReason, StepInfo, TestInfoRow, TestState } from './types';
 
 /**
  * CFS HTML report — <outputFolder>/index.html (one self-contained page) with
@@ -13,6 +17,9 @@ import type { AttachmentInfo, ErrorInfo, ModuleSummary, ReportData, RunCounts, S
  *
  *  - verdict, pass rate, counts and run details (environment, address, browsers…)
  *  - "Needs attention": every failed and flaky test with its error, screenshot and trace
+ *  - CFS application coverage: every menu screen of the app and how it did, also the
+ *    ones this run never reached, so a short run cannot look like a complete one
+ *  - test levels (smoke, sanity, regression) and why tests were skipped
  *  - modules: one card per test folder (Commercial, Operations, Admin…)
  *  - every test, filterable by status / module / text, with steps, errors,
  *    screenshots, video, trace and console output
@@ -270,6 +277,10 @@ export default class CfsHtmlReporter implements Reporter {
       durationMs: result?.duration ?? endedAt.getTime() - this.startedAt.getTime(),
       counts,
       modules,
+      screens: screenCoverage(tests),
+      levels: levelSummaries(tests),
+      skipReasons: skipReasons(tests),
+      signInProblem: signInProblem(tests),
       tests: tests.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.project.localeCompare(b.project)),
       globalErrors: this.globalErrors,
       run: {
@@ -286,7 +297,8 @@ export default class CfsHtmlReporter implements Reporter {
         platform: `${process.platform} ${process.arch}`,
         ci: env.isCI,
         envFile: env.loadedFrom,
-        user: env.username || '(not set)',
+        user: env.username || savedSignInUser() || '(not set)',
+        runBy: runBy(),
       },
     };
   }
@@ -305,6 +317,10 @@ export default class CfsHtmlReporter implements Reporter {
           startedAt: data.startedAt,
           durationMs: data.durationMs,
           counts: data.counts,
+          signInProblem: data.signInProblem,
+          screens: data.screens.map(({ name, screens, counts }) => ({ name, total: screens.length, ...counts })),
+          levels: data.levels,
+          skipReasons: data.skipReasons,
           modules: data.modules.map(({ name, total, passed, failed, flaky, skipped, durationMs }) => ({ name, total, passed, failed, flaky, skipped, durationMs })),
           failures: data.tests
             .filter((t) => t.state === 'failed' || t.state === 'interrupted' || t.state === 'flaky')
@@ -328,6 +344,8 @@ export default class CfsHtmlReporter implements Reporter {
       `${pad('Module', 20)}${pad('Tests', 7)}${pad('Pass', 6)}${pad('Fail', 6)}${pad('Flaky', 7)}${pad('Skip', 6)}Time`,
       ...data.modules.map((m) => `${pad(m.name, 20)}${pad(m.total, 7)}${pad(m.passed, 6)}${pad(m.failed, 6)}${pad(m.flaky, 7)}${pad(m.skipped, 6)}${formatMs(m.durationMs)}`),
       `${pad('Total', 20)}${pad(data.counts.total, 7)}${pad(data.counts.passed, 6)}${pad(data.counts.failed + data.counts.interrupted, 6)}${pad(data.counts.flaky, 7)}${pad(data.counts.skipped, 6)}${formatMs(data.durationMs)}`,
+      screenLine(data.screens),
+      ...(data.signInProblem ? [`Sign-in failed: ${data.signInProblem}`] : []),
       `Report: ${path.relative(process.cwd(), path.join(this.outDir, 'index.html'))}   (npm run report:open)`,
       '',
     ];
@@ -338,6 +356,107 @@ export default class CfsHtmlReporter implements Reporter {
     const quoted = `"${file}"`;
     const command = process.platform === 'win32' ? `start "" ${quoted}` : process.platform === 'darwin' ? `open ${quoted}` : `xdg-open ${quoted}`;
     exec(command, () => undefined);
+  }
+}
+
+/** The worst outcome among a screen's tests (one per browser project). No test means this run never reached it. */
+function screenResult(rows: TestInfoRow[]): ScreenResult {
+  if (!rows.length || rows.some((t) => t.notRun)) return 'not-run';
+  if (rows.some((t) => t.state === 'failed' || t.state === 'interrupted')) return 'failed';
+  if (rows.some((t) => t.state === 'running' || t.state === 'queued')) return 'pending';
+  if (rows.some((t) => t.state === 'flaky')) return 'flaky';
+  return rows.some((t) => t.state === 'skipped') ? 'skipped' : 'opened';
+}
+
+const skipReasonOf = (t: TestInfoRow): string | undefined => t.annotations.find((a) => a.type === 'skip' || a.type === 'fixme')?.description;
+
+/** Every menu screen by module, in menu order, with the result of the test that opens it. */
+function screenCoverage(tests: TestInfoRow[]): ScreenModule[] {
+  const opensTests = new Map<string, TestInfoRow[]>();
+  for (const t of tests) {
+    if (t.tags.includes(TAG.screens)) opensTests.set(t.title, [...(opensTests.get(t.title) ?? []), t]);
+  }
+
+  const byFolder = new Map<string, Screen[]>();
+  for (const s of SCREENS) byFolder.set(s.folder, [...(byFolder.get(s.folder) ?? []), s]);
+
+  const order = Object.keys(MODULES);
+  return [...byFolder.entries()]
+    .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
+    .map(([folder, list]) => {
+      const counts: Record<ScreenResult, number> = { opened: 0, failed: 0, flaky: 0, skipped: 0, 'not-run': 0, pending: 0 };
+      const screens = list.map((s): ScreenRow => {
+        const rows = opensTests.get(screenOpensTitle(s)) ?? [];
+        const result = screenResult(rows);
+        counts[result] += 1;
+        return { path: s.path, label: s.label, result, reason: result === 'skipped' ? skipReasonOf(rows[0]) : undefined, anchor: rows[0]?.anchor };
+      });
+      return { folder, name: moduleName(folder), screens, counts };
+    });
+}
+
+/** Smoke, sanity and regression, each with what became of its tests. */
+function levelSummaries(tests: TestInfoRow[]): LevelSummary[] {
+  const levels = [
+    { tag: TAG.smoke, name: 'Smoke', meaning: 'Is the app up? Sign-in, dashboard, one screen per module' },
+    { tag: TAG.sanity, name: 'Sanity', meaning: 'Does the core of each module work? Lists, forms, dialogs' },
+    { tag: TAG.regression, name: 'Regression', meaning: 'Everything else: the same checks on every other screen' },
+  ];
+  return levels.map((level) => {
+    const list = tests.filter((t) => t.tags.includes(level.tag));
+    const count = (state: TestState) => list.filter((t) => t.state === state).length;
+    const notRun = list.filter((t) => t.notRun).length;
+    return {
+      ...level,
+      total: list.length,
+      passed: count('passed'),
+      failed: count('failed') + count('interrupted'),
+      flaky: count('flaky'),
+      skipped: count('skipped') - notRun,
+      notRun,
+      pending: count('running') + count('queued'),
+    };
+  });
+}
+
+/** Skipped tests grouped by reason, most common first. The reason's leading "<screen>: " is dropped so a reason groups across screens. */
+function skipReasons(tests: TestInfoRow[]): SkipReason[] {
+  const counts = new Map<string, number>();
+  for (const t of tests) {
+    const reason = t.state === 'skipped' && !t.notRun ? skipReasonOf(t) : undefined;
+    if (!reason) continue;
+    const general = reason.replace(/^[^:]*: /, '');
+    counts.set(general, (counts.get(general) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count);
+}
+
+/** First line of the sign-in setup's error, when that setup failed. */
+function signInProblem(tests: TestInfoRow[]): string | undefined {
+  const setup = tests.find((t) => t.folder === 'setup' && (t.state === 'failed' || t.state === 'interrupted'));
+  return setup ? (setup.errors[0]?.message.split('\n')[0].replace(/^Error:\s*/, '') ?? 'The sign-in setup failed') : undefined;
+}
+
+function screenLine(modules: ScreenModule[]): string {
+  const sum = (result: ScreenResult) => modules.reduce((total, m) => total + m.counts[result], 0);
+  const total = modules.reduce((n, m) => n + m.screens.length, 0);
+  return `Screens: ${sum('opened') + sum('flaky')} of ${total} opened · ${sum('failed')} failed · ${sum('skipped')} skipped · ${sum('not-run')} not run`;
+}
+
+/** Who a hand sign-in was saved for (npm run auth:dev), when the env file names no user. */
+function savedSignInUser(): string {
+  try {
+    return (JSON.parse(fs.readFileSync(AUTH_META_FILE, 'utf8')) as { username?: string }).username ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function runBy(): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return '';
   }
 }
 

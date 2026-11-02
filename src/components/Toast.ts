@@ -27,10 +27,11 @@ export class Toast {
     return base.filter({ has: this.page.locator('.cfs-toast-summary', { hasText: summary }) });
   }
 
+  /** Summary and detail are matched in one check: a toast can expire between two separate ones. */
   async expectShown(options: { summary: string | RegExp; severity?: ToastSeverity; detail?: string | RegExp; timeout?: number }): Promise<void> {
-    const toast = this.withSummary(options.summary, options.severity).first();
-    await expect(toast, `toast "${options.summary}"`).toBeVisible({ timeout: options.timeout });
-    if (options.detail) await expect(toast.locator('.cfs-toast-detail')).toContainText(options.detail);
+    const shown = this.withSummary(options.summary, options.severity);
+    const toast = options.detail ? shown.filter({ has: this.page.locator('.cfs-toast-detail', { hasText: options.detail }) }) : shown;
+    await expect(toast.first(), `toast "${options.summary}"`).toBeVisible({ timeout: options.timeout });
   }
 
   /** Text of every toast on screen, "summary — detail". */

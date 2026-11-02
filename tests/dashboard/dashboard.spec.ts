@@ -1,7 +1,19 @@
 import { test, expect } from '@fixtures';
 import { breadcrumbOf, screen } from '@data/screens';
 import { DashboardPage } from '@pages/dashboard/DashboardPage';
+import { checkScreenOpens, moduleScreens, screenTags, screenTitle } from '@utils/screen-checks';
 import { TAG } from '@utils/tags';
+
+/** Both dashboards of the menu open cleanly, like every other screen. */
+const { screens, smoke } = moduleScreens('dashboard');
+
+test.describe('Dashboard screens', () => {
+  for (const target of screens) {
+    test(screenTitle(target), { tag: screenTags(target, smoke) }, async ({ menuScreen, topbar, browserIssues }) => {
+      await checkScreenOpens({ screen: target, menuScreen, topbar, browserIssues });
+    });
+  }
+});
 
 /** The home screen: KPI cards, then section cards. */
 test.describe('Dashboard', () => {

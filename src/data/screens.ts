@@ -47,5 +47,10 @@ export function breadcrumbOf(s: Screen): string[] {
   return [...(s.section && s.section !== 'General' ? s.section.split(' / ') : []), s.label];
 }
 
+/** Title of the test that opens a screen. The CFS report finds each screen's result by it. */
+export function screenOpensTitle(s: Pick<Screen, 'label' | 'path'>): string {
+  return `${s.label} (${s.path}) opens`;
+}
+
 /** Screens a test can open: the menu entry has a page behind it. */
 export const OPENABLE_SCREENS = SCREENS.filter((s) => s.layout !== 'missing');
