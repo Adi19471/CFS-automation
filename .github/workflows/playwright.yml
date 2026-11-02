@@ -1,0 +1,93 @@
+name: CFS Playwright
+
+# Push / pull request: type check and test discovery only (no app needed).
+# Run workflow (Actions tab): runs the suite against the chosen environment.
+#   Secrets per GitHub Environment (local, dev, uat, production):
+#     CFS_USERNAME, CFS_PASSWORD   — the test account
+#     BASE_URL (optional)          — overrides src/config/environments.ts
+#   local / dev are only reachable from the office network: run those on the
+#   self-hosted office runner.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: CFS environment
+        type: choice
+        options: [uat, production, dev, local]
+        default: uat
+      grep:
+        description: 'Only tests matching (e.g. @smoke or @sanity). Empty = all'
+        required: false
+        default: '@smoke'
+      runner:
+        description: Runner
+        type: choice
+        options: [ubuntu-latest, self-hosted]
+        default: ubuntu-latest
+
+jobs:
+  check:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx playwright test --list
+
+  e2e:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 120
+    env:
+      CI: 'true'
+      TEST_ENV: ${{ inputs.environment }}
+      BASE_URL: ${{ secrets.BASE_URL }}
+      CFS_USERNAME: ${{ secrets.CFS_USERNAME }}
+      CFS_PASSWORD: ${{ secrets.CFS_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run tests
+        run: npx playwright test ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
+      - name: Allure report
+        if: ${{ !cancelled() }}
+        run: npm run allure:generate
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: cfs-report-${{ inputs.environment }}
+          path: cfs-report/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: allure-report-${{ inputs.environment }}
+          path: allure-report/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-${{ inputs.environment }}
+          path: playwright-report/
+          retention-days: 30

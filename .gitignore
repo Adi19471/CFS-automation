@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Playwright output
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Reports
+/allure-results/
+/allure-report/
+/cfs-report/
+
+# Environment files hold the CFS sign-in; only the template is committed.
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+*.log
+Thumbs.db
+.DS_Store
