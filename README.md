@@ -170,6 +170,25 @@ Read labels with `textContent()`, not `innerText()`. The app capitalises table h
 - **Push and pull request:** type check and test discovery.
 - **Run workflow** (Actions tab): runs the suite against the chosen environment and uploads all three reports as artifacts. It needs `CFS_USERNAME` and `CFS_PASSWORD` set as secrets in the matching GitHub Environment. `local` and `dev` are only reachable from the office network, so pick the self-hosted runner for those.
 
+### Jenkins and Docker
+
+`Jenkinsfile` builds the `Dockerfile` image on a Windows agent, runs the tests in a container and copies the reports out. Choose `TEST_LEVEL` (smoke, sanity, regression) and `TEST_ENV` (dev, uat) with **Build with Parameters**.
+
+- **Docker Desktop must be running** on the agent. If it is not, the build stops at *Check Docker* and says so.
+- **Sign-in:** add a *Username with password* credential in Jenkins with the ID `cfs-dev-login` (or `cfs-uat-login`). Without it the build runs only the signed-out tests and is marked UNSTABLE.
+- **Results:** test failures make the build UNSTABLE, and FAILURE means the pipeline itself broke. Jenkins shows its own test results; the CFS report, Playwright report and Allure results are kept with each build. Jenkins' security policy strips the CFS report's styling on its own page, so download it from the build's artifacts to see it in full.
+- The `Dockerfile` tag must match `@playwright/test` in `package-lock.json`, so change both together when upgrading Playwright.
+
+To run the image by hand:
+
+```bash
+docker build -t cfs-playwright:latest .
+```
+
+```bash
+docker run --rm --init --ipc=host -e TEST_ENV=dev cfs-playwright:latest npx playwright test --project=public
+```
+
 ## Known items
 
 - `checkScreenOpens` marks a menu entry with no page as `test.fail`, so it documents the gap. No entry is in that state today; *Admin › Commercial › Company Type* now has a page.

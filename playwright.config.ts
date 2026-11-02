@@ -17,6 +17,7 @@ import type { CfsOptions } from './src/fixtures/base.fixture';
  *   playwright-report/  Playwright HTML        npm run report:playwright
  *   allure-results/     Allure raw results     npm run allure:report
  *   cfs-report/         CFS HTML report        npm run report:open
+ *   junit/              JUnit XML              CI only, for Jenkins
  */
 
 const DEVICES: Record<BrowserName, (typeof devices)[string] & { channel?: string }> = {
@@ -92,6 +93,8 @@ const REPORTERS: ReporterDescription[] = [
     },
   ],
   ['./src/reporters/CfsHtmlReporter.ts', { outputFolder: 'cfs-report', title: 'CFS Test Report', open: env.isCI ? 'never' : env.reportOpen }],
+  /* Jenkins reads this for its own test results and trend. */
+  ...(env.isCI ? ([['junit', { outputFile: 'junit/results.xml' }]] as ReporterDescription[]) : []),
 ];
 
 export default defineConfig<CfsOptions>({

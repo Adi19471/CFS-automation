@@ -1,0 +1,28 @@
+# Never in an image: sign-in details and saved sessions.
+.env
+.env.*
+!.env.example
+playwright/.auth/
+
+# Installed inside the image by npm ci.
+node_modules/
+
+# Output of earlier runs.
+test-results/
+playwright-report/
+blob-report/
+allure-results/
+allure-report/
+cfs-report/
+junit/
+
+# Not needed to run the tests.
+.git/
+.github/
+.vscode/
+.idea/
+Dockerfile
+.dockerignore
+Jenkinsfile
+README.md
+*.log
